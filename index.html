@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>まにまにマップ - Discordサーバー案内</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #4285F4;
+            --sidebar-width: 380px;
+            --shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            overflow: hidden;
+            background-color: #e8eaed; /* Map background color */
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* --- Map Container & Background Pattern --- */
+        #map-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            /* Creating a grid pattern to look like a map/blueprint */
+            background-image: 
+                linear-gradient(#dadce0 1px, transparent 1px),
+                linear-gradient(90deg, #dadce0 1px, transparent 1px);
+            background-size: 50px 50px;
+            cursor: grab;
+        }
+
+        /* --- Search Bar (Header) --- */
+        .search-box {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            width: 360px;
+            height: 48px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            z-index: 100;
+        }
+        .search-box input {
+            border: none;
+            outline: none;
+            font-size: 16px;
+            margin-left: 12px;
+            flex-grow: 1;
+            font-family: inherit;
+        }
+        .hamburger { color: #5f6368; cursor: pointer; }
+        .search-icon { color: #5f6368; margin-left: auto; cursor: pointer; }
+
+        /* --- Sidebar (Info Panel) --- */
+        #sidebar {
+            position: absolute;
+            top: 0;
+            left: -400px; /* Hidden by default */
+            width: var(--sidebar-width);
+            height: 100%;
+            background: white;
+            z-index: 200;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+            transition: left 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #sidebar.active { left: 0; }
+
+        .sidebar-header {
+            height: 200px;
+            background-color: #f1f3f4;
+            position: relative;
+            background-size: cover;
+            background-position: center;
+        }
+        
+        /* Close button on sidebar */
+        .close-btn {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: rgba(255,255,255,0.8);
+            border-radius: 50%;
+            padding: 8px;
+            cursor: pointer;
+            display: flex;
+        }
+
+        .sidebar-content { padding: 24px; }
+        .place-title { font-size: 24px; font-weight: 700; color: #202124; margin-bottom: 8px; }
+        .place-category { color: #70757a; font-size: 14px; margin-bottom: 20px; display: flex; align-items: center; }
+        .place-category span { margin-right: 4px; color: var(--primary-color); }
+        
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid #dadce0;
+            padding-bottom: 24px;
+        }
+        .btn {
+            border: 1px solid #dadce0;
+            border-radius: 30px;
+            padding: 8px 16px;
+            color: #1a73e8;
+            font-weight: 500;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:hover { background: #f1f8ff; }
+        .btn-primary { background: #1a73e8; color: white; border: none; }
+        .btn-primary:hover { background: #1558b0; }
+
+        .info-row {
+            display: flex;
+            margin-bottom: 16px;
+            color: #3c4043;
+            line-height: 1.5;
+        }
+        .info-icon { margin-right: 16px; color: #70757a; }
+
+        /* --- Map Pins --- */
+        .pin {
+            position: absolute;
+            cursor: pointer;
+            transform: translate(-50%, -100%); /* Anchor to bottom center */
+            transition: transform 0.2s;
+        }
+        .pin:hover { transform: translate(-50%, -110%) scale(1.1); }
+        
+        /* Pin Shape */
+        .pin-shape {
+            width: 40px;
+            height: 40px;
+            background-color: #EA4335;
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        /* Icon inside pin */
+        .pin-icon {
+            transform: rotate(45deg);
+            color: white;
+            font-size: 20px;
+        }
+        /* Pin shadow on ground */
+        .pin::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 14px;
+            height: 4px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 50%;
+            filter: blur(2px);
+        }
+        
+        /* Pin Colors */
+        .pin.blue .pin-shape { background-color: #1a73e8; } /* General */
+        .pin.green .pin-shape { background-color: #188038; } /* Voice */
+        .pin.yellow .pin-shape { background-color: #fbbc04; } /* Rules */
+        .pin.purple .pin-shape { background-color: #a142f4; } /* Admin */
+
+        /* Label below pin */
+        .pin-label {
+            position: absolute;
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #3c4043;
+            white-space: nowrap;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            pointer-events: none;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 600px) {
+            .search-box { width: 90%; left: 5%; }
+            #sidebar { width: 100%; left: -100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app">
+        <div class="search-box">
+            <span class="material-icons hamburger">menu</span>
+            <input type="text" placeholder="まにまにマップを検索" readonly>
+            <span class="material-icons search-icon">search</span>
+        </div>
+
+        <div id="map-container">
+            </div>
+
+        <div id="sidebar">
+            <div class="sidebar-header" id="detail-header" style="background-color: #eee;">
+                <div class="close-btn" onclick="closeSidebar()">
+                    <span class="material-icons">close</span>
+                </div>
+            </div>
+            <div class="sidebar-content">
+                <h1 class="place-title" id="detail-title">場所の名前</h1>
+                <div class="place-category">
+                    <span class="material-icons">star</span>
+                    <span id="detail-rating">4.8</span>
+                    <span style="color: #70757a; margin-left:4px;">(サーバー内施設)</span>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn btn-primary">
+                        <span class="material-icons">directions</span>
+                        経路
+                    </button>
+                    <button class="btn">
+                        <span class="material-icons">share</span>
+                        共有
+                    </button>
+                </div>
+
+                <div class="info-row">
+                    <span class="material-icons info-icon">location_on</span>
+                    <span id="detail-discord-ch">#general (Discordチャンネル)</span>
+                </div>
+                <div class="info-row">
+                    <span class="material-icons info-icon">info</span>
+                    <span id="detail-desc">ここに説明文が入ります。</span>
+                </div>
+                <div class="info-row">
+                    <span class="material-icons info-icon">schedule</span>
+                    <span>24時間営業</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 🗺️ Map Data (Configuration) ---
+        // ここを編集して「建物」と「チャンネル」を定義してください
+        // top/left は画面上の位置 (%) です。
+        const locations = [
+            {
+                id: 1,
+                name: "エントランス広場",
+                discordChannel: "#はじめに・挨拶",
+                type: "yellow", // color class
+                icon: "waving_hand",
+                top: 80, left: 50,
+                rating: "5.0",
+                description: "サーバーを訪れた全ての人が最初に通る大きな広場。ここでは受付ロボットが入館証を発行し、街のルールブックを手渡してくれます。まずはここで挨拶を叫びましょう。"
+            },
+            {
+                id: 2,
+                name: "中央交流酒場",
+                discordChannel: "#雑談・general",
+                type: "blue",
+                icon: "chat",
+                top: 50, left: 50,
+                rating: "4.9",
+                description: "まにまにマップの中心に位置する、24時間賑わう巨大な酒場。話題は天気の話から宇宙の真理まで。誰でも席について会話に参加できます。マスター（管理人）もよくカウンターで居眠りしています。"
+            },
+            {
+                id: 3,
+                name: "クリエイターのアトリエ",
+                discordChannel: "#イラスト・創作",
+                type: "purple",
+                icon: "palette",
+                top: 30, left: 70,
+                rating: "4.8",
+                description: "色とりどりの絵の具とキャンバスが並ぶ、静かで美しい工房。壁一面には住民たちが描いた作品が展示されています。見学だけでも大歓迎。時折、深夜に作業通話という名のパーティーが開かれます。"
+            },
+            {
+                id: 4,
+                name: "地下闘技場",
+                discordChannel: "#ゲーム募集・VC",
+                type: "green",
+                icon: "sports_esports",
+                top: 60, left: 20,
+                rating: "4.7",
+                description: "熱気が渦巻く地下施設。毎晩のようにFPSや格闘ゲームの大会が開かれています。防音設備は完璧なので、どれだけ叫んでも近所迷惑にはなりません。観戦席もあります。"
+            },
+            {
+                id: 5,
+                name: "管理塔（立入禁止）",
+                discordChannel: "#運営・Admin",
+                type: "red",
+                icon: "security",
+                top: 20, left: 20,
+                rating: "3.5",
+                description: "街を見下ろす高い塔。セキュリティレベルが高く、選ばれた管理スタッフしか入ることはできません。ここで街の治安維持や新しい区画の計画が行われています。"
+            }
+        ];
+
+        // --- 🛠️ Render Logic ---
+        const mapContainer = document.getElementById('map-container');
+        const sidebar = document.getElementById('sidebar');
+
+        // Sidebar Elements
+        const dTitle = document.getElementById('detail-title');
+        const dDesc = document.getElementById('detail-desc');
+        const dChannel = document.getElementById('detail-discord-ch');
+        const dRating = document.getElementById('detail-rating');
+        const dHeader = document.getElementById('detail-header');
+
+        // Initialize Map
+        locations.forEach(loc => {
+            const pin = document.createElement('div');
+            pin.className = `pin ${loc.type}`;
+            pin.style.top = loc.top + '%';
+            pin.style.left = loc.left + '%';
+            pin.innerHTML = `
+                <div class="pin-shape">
+                    <span class="material-icons pin-icon">${loc.icon}</span>
+                </div>
+                <div class="pin-label">${loc.name}</div>
+            `;
+            
+            // Click Event
+            pin.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent map click
+                showDetails(loc);
+            });
+
+            mapContainer.appendChild(pin);
+        });
+
+        // Click map background to close sidebar
+        mapContainer.addEventListener('click', () => {
+            closeSidebar();
+        });
+
+        function showDetails(loc) {
+            // Fill Content
+            dTitle.innerText = loc.name;
+            dDesc.innerText = loc.description;
+            dChannel.innerText = loc.discordChannel;
+            dRating.innerText = loc.rating;
+            
+            // Header Color based on pin type
+            let color = '#4285F4';
+            if(loc.type === 'green') color = '#188038';
+            if(loc.type === 'yellow') color = '#fbbc04';
+            if(loc.type === 'purple') color = '#a142f4';
+            if(loc.type === 'red') color = '#EA4335';
+            
+            dHeader.style.backgroundColor = color;
+
+            // Show Sidebar
+            sidebar.classList.add('active');
+        }
+
+        function closeSidebar() {
+            sidebar.classList.remove('active');
+        }
+    </script>
+</body>
+</html>
